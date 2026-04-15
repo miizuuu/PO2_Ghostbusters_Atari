@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ghostbusters - Atari 2600 Clone</title>
+    <style>
+        :root {
+            --atari-black: #000000;
+            --atari-white: #FFFFFF;
+            --atari-blue: #4444FF;
+            --atari-green: #44FF44;
+            --atari-red: #FF4444;
+            --atari-gold: #DDAA00;
+        }
+
+        body {
+            background-color: #1a1a1a;
+            color: var(--atari-white);
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 10px solid #333;
+            image-rendering: pixelated;
+        }
+
+        canvas {
+            background-color: black;
+            display: block;
+            width: 640px; 
+            height: 400px;
+        }
+
+        #game-container::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="320" height="200"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const PALETTE = {
+            BLACK: '#000000', WHITE: '#FFFFFF', RED: '#BA0E0E',
+            BLUE: '#0019B0', GREEN: '#008106', GOLD: '#C97D06',
+            SKY: '#40A4FF', GRAY: '#929292'
+        };
+
+        const STATES = {
+            TITLE: 'TITLE', SHOP: 'SHOP', MAP: 'MAP', 
+            DRIVING: 'DRIVING', CAPTURE: 'CAPTURE', GAMEOVER: 'GAMEOVER'
+        };
+
+        // --- Audio Engine ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(freq, type, duration, vol = 0.1) {
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {}
+        }
+
+        const SFX = {
+            SELECT: () => playSound(440, 'square', 0.1),
+            SUCCESS: () => { playSound(523, 'square', 0.1); setTimeout(()=>playSound(659, 'square', 0.1), 100); },
+            FAIL: () => playSound(110, 'sawtooth', 0.5),
+            BEAM: () => playSound(100 + Math.random()*200, 'sawtooth', 0.05, 0.03),
+            DRIVE: () => playSound(60 + Math.sin(Date.now()*0.01)*10, 'triangle', 0.05, 0.02)
+        };
+
+        // --- Variables ---
+        let currentState = STATES.TITLE;
+        let selectedTitleIndex = 0;
+        let money = 5000;
+        let pkMeter = 0;
+        let inventory = { traps: 1, vacuum: false, sensor: false };
+        let playerPos = { x: 4, y: 4 };
+        let ghosts = [];
+        let lastGhostSpawn = 0;
+        let selectedShopIndex = 0;
+
+        const SPRITES = {
+            ECTO1: [[0,0,0,1,1,1,0,0],[0,1,1,1,1,1,0,0],[1,1,1,1,1,1,1,1],[1,0,1,1,1,1,0,1]],
+            GHOST: [[0,1,1,1,0,0,0,0],[1,1,1,1,1,0,0,0],[1,0,1,0,1,0,0,0],[1,1,1,1,1,0,0,0]],
+            BUSTER: [[0,1,1,0],[1,1,1,1],[0,1,1,0],[1,0,0,1]],
+            STAY_PUFT: [[0,0,1,1,1,1,0,0],[0,1,1,1,1,1,1,0],[1,1,0,1,1,0,1,1],[1,1,1,1,1,1,1,1],[1,1,1,0,0,1,1,1],[0,1,1,1,1,1,1,0]]
+        };
+
+        function drawPixelSprite(sprite, x, y, size, color) {
+            ctx.fillStyle = color;
+            sprite.forEach((row, r) => row.forEach((p, c) => { if(p) ctx.fillRect(x+c*size, y+r*size, size, size); }));
+        }
+
+        function drawTitle() {
+            ctx.fillStyle = PALETTE.GOLD; ctx.textAlign = 'center'; ctx.font = '20px monospace'; ctx.fillText('GHOSTBUSTERS ATARI', 160, 40);
+            ctx.fillStyle = PALETTE.WHITE; ctx.font = '8px monospace';
+            const mechs = ["1. SISTEMA DE ECONOMIA ($5000)", "2. CUSTOMIZACAO DE ITENS", "3. MAPA DE NAVEGACAO CIDADE", "4. SEQUENCIA DE DIRECAO ECTO-1", "5. CAPTURA COM RAIO PROTON", "6. GESTAO DE ENERGIA/TRAPS", "7. CONDICAO VITORIA/DERROTA"];
+            mechs.forEach((m, i) => ctx.fillText(m, 160, 65 + i * 10));
+            const menu = ["JOGAR", "SAIR"];
+            menu.forEach((item, i) => { ctx.fillStyle = i === selectedTitleIndex ? PALETTE.SKY : PALETTE.WHITE; ctx.font = '14px monospace'; ctx.fillText(i === selectedTitleIndex ? `> ${item} <` : item, 160, 160 + i * 20); });
+        }
+
+        const SHOP_ITEMS = [{ id: 'sensor', name: 'GHOST SENSOR', price: 2000, desc: 'DETENTA FANTASMAS NO MAPA' }, { id: 'vacuum', name: 'GHOST VACUUM', price: 500, desc: 'SUGA FANTASMAS NA ESTRADA' }, { id: 'trap', name: 'EXTRA TRAP', price: 500, desc: 'MAIS CAPACIDADE DE CARGA' }];
+        function drawShop() {
+            ctx.fillStyle = PALETTE.GOLD; ctx.textAlign = 'center'; ctx.font = '16px monospace'; ctx.fillText('EQUIPMENT SHOP', 160, 30);
+            ctx.fillStyle = PALETTE.WHITE; ctx.fillText(`BUDGET: $${money}`, 160, 50);
+            SHOP_ITEMS.forEach((item, i) => { const y = 80 + i*25; ctx.fillStyle = i === selectedShopIndex ? PALETTE.SKY : PALETTE.WHITE; ctx.textAlign = 'left'; ctx.fillText(item.name, 50, y); ctx.textAlign = 'right'; ctx.fillText(`$${item.price}`, 270, y); });
+            ctx.textAlign = 'center'; ctx.font = '10px monospace'; ctx.fillText('SPACE: COMPRAR - ENTER: INICIAR', 160, 185); ctx.fillText(SHOP_ITEMS[selectedShopIndex].desc, 160, 170);
+        }
+
+        function updateMap() { pkMeter += 0.1; if (pkMeter >= 9999) currentState = STATES.GAMEOVER; if (pkMeter > 7000 && Math.random() > 0.98) playSound(220, 'sine', 0.5, 0.05); if (Date.now() - lastGhostSpawn > 4000) { ghosts.push({x:Math.random()*8, y:Math.random()*8}); lastGhostSpawn=Date.now(); } ghosts.forEach(g => { if(Math.random()>0.97) { g.x+=(4-g.x)*0.02; g.y+=(4-g.y)*0.02; } }); }
+        function drawMap() {
+            ctx.strokeStyle = '#222'; for(let i=0; i<=8; i++) { ctx.beginPath(); ctx.moveTo(i*40,0); ctx.lineTo(i*40,180); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,i*22.5); ctx.lineTo(320,i*22.5); ctx.stroke(); }
+            ctx.fillStyle = PALETTE.RED; ctx.fillRect(4*40+5, 4*22+5, 30, 15); ctx.fillStyle = PALETTE.GOLD; ctx.fillRect(0, 180, 320, 20); ctx.fillStyle = PALETTE.BLACK; ctx.textAlign='left'; ctx.font='10px monospace'; ctx.fillText(`$${money}`, 10, 194); ctx.textAlign='right'; ctx.fillText(`PK METER: ${Math.floor(pkMeter)}`, 310, 194);
+            ghosts.forEach(g => drawPixelSprite(SPRITES.GHOST, g.x*40+15, g.y*22+5, 2, inventory.sensor ? PALETTE.GREEN : '#151515')); drawPixelSprite(SPRITES.ECTO1, playerPos.x*40+10, playerPos.y*22+8, 3, PALETTE.WHITE);
+        }
+
+        let drivingProg = 0, ectoY = 100, roadGhosts = [], vacuumOn = false;
+        function updateDriving() { drivingProg++; if(Math.random()>0.96) roadGhosts.push({x:320, y:50+Math.random()*100}); roadGhosts.forEach((g,i) => { g.x -= 3; if(vacuumOn && inventory.vacuum && Math.abs(g.x-40)<40 && Math.abs(g.y-ectoY)<30) { roadGhosts.splice(i,1); money+=50; } }); if(drivingProg > 250) { currentState = STATES.CAPTURE; initCapture(); } }
+        function drawDriving() { ctx.fillStyle = '#333'; ctx.fillRect(0, 50, 320, 100); ctx.strokeStyle = PALETTE.WHITE; ctx.setLineDash([20,20]); ctx.lineDashOffset = -drivingProg*3; ctx.beginPath(); ctx.moveTo(0,100); ctx.lineTo(320,100); ctx.stroke(); ctx.setLineDash([]); drawPixelSprite(SPRITES.ECTO1, 40, ectoY, 4, PALETTE.WHITE); if(vacuumOn && inventory.vacuum) { ctx.strokeStyle = PALETTE.SKY; ctx.beginPath(); ctx.arc(80, ectoY+10, 30, -1.5, 1.5); ctx.stroke(); } roadGhosts.forEach(g => drawPixelSprite(SPRITES.GHOST, g.x, g.y, 3, PALETTE.GREEN)); ctx.fillStyle = PALETTE.GOLD; ctx.textAlign='center'; ctx.fillText("A CAMINHO DA EMERGENCIA...", 160, 30); }
+
+        let capG = {x:160, y:40}, b1 = 80, b2 = 240, capState = 'PLAYING', energy = 100;
+        function initCapture() { capState='PLAYING'; energy=100; b1=80; b2=240; }
+        function updateCapture() { if(capState!=='PLAYING') return; capG.x += (Math.random()-0.5)*6; capG.y += (Math.random()-0.5)*3; energy -= 0.2; if(energy<=0) finishCap(false); }
+        function drawCapture() { ctx.fillStyle = '#111'; ctx.fillRect(0,0,320,200); drawPixelSprite(SPRITES.BUSTER, b1, 160, 4, PALETTE.GOLD); drawPixelSprite(SPRITES.BUSTER, b2, 160, 4, PALETTE.GOLD); if(energy > 0) { ctx.strokeStyle = '#F00'; ctx.beginPath(); ctx.moveTo(b1+8,160); ctx.lineTo(capG.x+8, capG.y+8); ctx.stroke(); ctx.strokeStyle = '#0FF'; ctx.beginPath(); ctx.moveTo(b2+8,160); ctx.lineTo(capG.x+8, capG.y+8); ctx.stroke(); } drawPixelSprite(SPRITES.GHOST, capG.x, capG.y, 4, PALETTE.GREEN); ctx.fillStyle = PALETTE.WHITE; ctx.textAlign='center'; ctx.fillText(`BACKPACK ENERGY: ${Math.floor(energy)}%`, 160, 20); if(capState==='WIN') ctx.fillText('FANTASMA CAPTURADO!', 160, 100); if(capState==='LOSE') ctx.fillText('FANTASMA ESCAPOU!', 160, 100); }
+        function finishCap(win) { capState = win ? 'WIN' : 'LOSE'; if(win) { money += 500; pkMeter = Math.max(0, pkMeter-300); SFX.SUCCESS(); } else { SFX.FAIL(); } setTimeout(() => currentState = STATES.MAP, 1500); }
+
+        function drawGameOver() { ctx.fillStyle = PALETTE.BLACK; ctx.fillRect(0, 0, 320, 200); drawPixelSprite(SPRITES.STAY_PUFT, 110, 40, 12, PALETTE.WHITE); ctx.fillStyle = PALETTE.RED; ctx.textAlign='center'; ctx.font='20px monospace'; ctx.fillText('CIDADE DESTRUIDA!', 160, 160); ctx.fillStyle = PALETTE.WHITE; ctx.font='10px monospace'; ctx.fillText(`SALDO FINAL: $${money}`, 160, 180); ctx.fillText('ENTER PARA RECOMECAR', 160, 10); }
+
+        function update() { if(currentState === STATES.MAP) updateMap(); else if(currentState === STATES.DRIVING) { updateDriving(); SFX.DRIVE(); } else if(currentState === STATES.CAPTURE) { updateCapture(); if(energy > 0) SFX.BEAM(); } }
+        function draw() { ctx.fillStyle = PALETTE.BLACK; ctx.fillRect(0,0,320,200); if(currentState === STATES.TITLE) drawTitle(); else if(currentState === STATES.SHOP) drawShop(); else if(currentState === STATES.MAP) drawMap(); else if(currentState === STATES.DRIVING) drawDriving(); else if(currentState === STATES.CAPTURE) drawCapture(); else if(currentState === STATES.GAMEOVER) drawGameOver(); const grad = ctx.createRadialGradient(160, 100, 50, 160, 100, 200); grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.3)'); ctx.fillStyle = grad; ctx.fillRect(0,0,320,200); }
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+
+        window.addEventListener('keydown', e => {
+            if(currentState === STATES.TITLE) { if(e.key === 'ArrowUp') { selectedTitleIndex = 0; SFX.SELECT(); } if(e.key === 'ArrowDown') { selectedTitleIndex = 1; SFX.SELECT(); } if(e.key === 'Enter' || e.key === ' ') { if(selectedTitleIndex === 0) { currentState = STATES.SHOP; SFX.SELECT(); } else alert("Obrigado por jogar!"); } }
+            else if(currentState === STATES.SHOP) { if(e.key === 'ArrowUp') { selectedShopIndex = (selectedShopIndex-1+3)%3; SFX.SELECT(); } if(e.key === 'ArrowDown') { selectedShopIndex = (selectedShopIndex+1)%3; SFX.SELECT(); } if((e.key === ' ' || e.key === 'z') && money >= SHOP_ITEMS[selectedShopIndex].price) { money -= SHOP_ITEMS[selectedShopIndex].price; inventory[SHOP_ITEMS[selectedShopIndex].id] = true; SFX.SELECT(); } if(e.key === 'Enter') { currentState = STATES.MAP; SFX.SELECT(); } }
+            else if(currentState === STATES.MAP) { if(e.key === 'ArrowUp') playerPos.y = Math.max(0, playerPos.y-1); if(e.key === 'ArrowDown') playerPos.y = Math.min(7, playerPos.y+1); if(e.key === 'ArrowLeft') playerPos.x = Math.max(0, playerPos.x-1); if(e.key === 'ArrowRight') playerPos.x = Math.min(7, playerPos.x+1); ghosts.forEach((g,i) => { if(Math.floor(g.x)===playerPos.x && Math.floor(g.y)===playerPos.y) { ghosts.splice(i,1); currentState=STATES.DRIVING; drivingProg=0; roadGhosts=[]; } }); }
+            else if(currentState === STATES.DRIVING) { if(e.key === 'ArrowUp') ectoY = Math.max(50, ectoY-10); if(e.key === 'ArrowDown') ectoY = Math.min(130, ectoY+10); if(e.key === ' ' || e.key === 'v') vacuumOn = true; }
+            else if(currentState === STATES.CAPTURE && capState==='PLAYING') { if(e.key === 'ArrowLeft') b1 -= 8; if(e.key === 'ArrowRight') b1 += 8; if(e.key === 'ArrowUp') b2 -= 8; if(e.key === 'ArrowDown') b2 += 8; if(e.key === ' ') { if(Math.abs(capG.x - 160) < 50) finishCap(true); } }
+            else if(currentState === STATES.GAMEOVER && e.key === 'Enter') location.reload();
+        });
+        window.addEventListener('keyup', e => { if(e.key===' ' || e.key === 'v') vacuumOn = false; });
+        gameLoop();
+    </script>
+</body>
+</html>
