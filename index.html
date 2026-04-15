@@ -37,8 +37,11 @@
         canvas {
             background-color: black;
             display: block;
-            width: 640px; 
-            height: 400px;
+            width: 960px; 
+            height: 600px;
+            max-width: 95vw;
+            max-height: 90vh;
+            object-fit: contain;
         }
 
         #game-container::after {
@@ -124,12 +127,38 @@
         }
 
         function drawTitle() {
-            ctx.fillStyle = PALETTE.GOLD; ctx.textAlign = 'center'; ctx.font = '20px monospace'; ctx.fillText('GHOSTBUSTERS ATARI', 160, 40);
-            ctx.fillStyle = PALETTE.WHITE; ctx.font = '8px monospace';
-            const mechs = ["1. SISTEMA DE ECONOMIA ($5000)", "2. CUSTOMIZACAO DE ITENS", "3. MAPA DE NAVEGACAO CIDADE", "4. SEQUENCIA DE DIRECAO ECTO-1", "5. CAPTURA COM RAIO PROTON", "6. GESTAO DE ENERGIA/TRAPS", "7. CONDICAO VITORIA/DERROTA"];
-            mechs.forEach((m, i) => ctx.fillText(m, 160, 65 + i * 10));
+            ctx.fillStyle = PALETTE.GOLD; ctx.textAlign = 'center'; ctx.font = '18px monospace';
+            ctx.fillText('GHOSTBUSTERS ATARI', 160, 25);
+            
+            // MECANICAS E MISSAO (ESQUERDA)
+            ctx.textAlign = 'left'; ctx.font = '7px monospace';
+            ctx.fillStyle = PALETTE.GOLD; ctx.fillText('MISSAO & 7 MECANICAS:', 15, 45);
+            ctx.fillStyle = PALETTE.WHITE;
+            const info = [
+                "1.ECONOMIA: USE SEUS $5000", "2.ITENS: COMPRE EQUIPAMENTOS",
+                "3.MAPA: NAVEGUE PELA CIDADE", "4.DIRECAO: DIRIJA O ECTO-1",
+                "5.CAPTURA: USE O RAIO PROTON", "6.GESTAO: CUIDE DAS ARMADILHAS",
+                "7.FIM: NAO DEIXE O PK SUBIR!"
+            ];
+            info.forEach((m, i) => ctx.fillText(m, 15, 60 + i * 10));
+
+            // PAINEL DE CONTROLES (DIREITA)
+            ctx.fillStyle = '#111'; ctx.fillRect(175, 50, 130, 80);
+            ctx.strokeStyle = PALETTE.SKY; ctx.strokeRect(175, 50, 130, 80);
+            ctx.fillStyle = PALETTE.GOLD; ctx.textAlign = 'center'; ctx.font = '9px monospace';
+            ctx.fillText('CONTROLES:', 240, 65);
+            ctx.fillStyle = PALETTE.WHITE; ctx.font = '7px monospace';
+            ctx.fillText('SETAS: MOVER/ESCOLHER', 240, 80);
+            ctx.fillText('ENTER: INICIAR / OK', 240, 95);
+            ctx.fillText('ESPACO: COMPRAR / ACAO', 240, 110);
+
+            // BOTOES (BAIXO)
             const menu = ["JOGAR", "SAIR"];
-            menu.forEach((item, i) => { ctx.fillStyle = i === selectedTitleIndex ? PALETTE.SKY : PALETTE.WHITE; ctx.font = '14px monospace'; ctx.fillText(i === selectedTitleIndex ? `> ${item} <` : item, 160, 160 + i * 20); });
+            menu.forEach((item, i) => {
+                ctx.fillStyle = i === selectedTitleIndex ? PALETTE.SKY : PALETTE.WHITE;
+                ctx.font = '16px monospace'; ctx.textAlign = 'center';
+                ctx.fillText(i === selectedTitleIndex ? `> ${item} <` : item, 160, 165 + i * 20);
+            });
         }
 
         const SHOP_ITEMS = [{ id: 'sensor', name: 'GHOST SENSOR', price: 2000, desc: 'DETENTA FANTASMAS NO MAPA' }, { id: 'vacuum', name: 'GHOST VACUUM', price: 500, desc: 'SUGA FANTASMAS NA ESTRADA' }, { id: 'trap', name: 'EXTRA TRAP', price: 500, desc: 'MAIS CAPACIDADE DE CARGA' }];
